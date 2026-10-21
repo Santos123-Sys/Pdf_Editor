@@ -88,9 +88,11 @@ docker compose up -d --wait
 
 Use only your trusted backup archive. This restores the default `/data` paths; if moving from a custom store path, update paths carefully before opening the application. Download an original and a version, compare SHA-256 values with their receipts, and export the restored library to verify recovery. The event trigger intentionally rejects truncation and deletion, so use a fresh database for restoration.
 
-## Railway (optional remote installation)
+## Railway deployment
 
-Local Compose is the default and needs no Railway service. Deploying here means files live on a remote server in your Railway project. Do not call that local storage. This repository does not create a hosted control plane.
+The owner has authorized Railway hosting. See [the deployment receipt and configuration](docs/railway-deployment.md) for current status, service wiring and validation requirements.
+
+Local Compose remains available and needs no Railway service. Deploying here means files live on a remote server in your Railway project. Do not call that local storage. This repository does not create a hosted control plane.
 
 For an explicitly chosen remote installation, use three services: PostgreSQL, API with root `api` and a persistent volume mounted at `/data`, and web with root `web`. Set API `DATABASE_URL`, `STORE_DIR=/data`, `PORT=8000`, and `APP_PUBLIC_URL` to the web URL. Keep API and database private. Set web `API_INTERNAL_URL=http://<api-service>.railway.internal:8000`, `WORKSPACE_PASSWORD`, and `REQUIRE_WORKSPACE_PASSWORD=1`. Only the web service should have a public domain. The web service refuses remote operation without a password. Use HTTPS, private networking, one API replica with the file volume, and independent backups.
 
