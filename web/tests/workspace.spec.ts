@@ -4,6 +4,9 @@ import path from "node:path";
 
 const fixture=path.join(process.cwd(),"tests","fixtures","two-pages.pdf");
 test("upload, preview every page, rotate, download, and signer consent",async({page,browser})=>{
+  const readiness=await fetch(new URL("/healthz",process.env.TEST_WEB_URL||"http://127.0.0.1:3000"));
+  expect(readiness.status).toBe(200);
+  expect(await readiness.json()).toEqual({ok:true});
   await page.goto("/");
   await page.getByLabel("Add documents").setInputFiles({name:"browser-happy.pdf",mimeType:"application/pdf",buffer:fs.readFileSync(fixture)});
   await expect(page.getByRole("heading",{name:"browser-happy.pdf",exact:true})).toBeVisible();
