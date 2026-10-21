@@ -1,0 +1,42 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: pdf
+      POSTGRES_USER: pdf
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-for-local-use}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pdf"]
+      interval: 3s
+      retries: 20
+  api:
+    build: ./api
+    image: papertrail-api:local
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://pdf:change-me-for-local-use@db:5432/pdf}
+      STORE_DIR: /data
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      APP_PUBLIC_URL: ${APP_PUBLIC_URL:-http://localhost:3000}
+    volumes:
+      - pdfdata:/data
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+  web:
+    build:
+      context: ./web
+    image: papertrail-web:local
+    environment:
+      API_INTERNAL_URL: http://api:8000
+      WORKSPACE_PASSWORD: ${WORKSPACE_PASSWORD:-}
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - api
+volumes:
+  pgdata:
+  pdfdata:
