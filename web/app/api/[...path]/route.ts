@@ -16,7 +16,11 @@ async function forward(request: NextRequest, context: { params: Promise<{path: s
   }
   if (!["GET", "HEAD"].includes(request.method)) {
     const origin = request.headers.get("origin");
-    if (request.headers.get("sec-fetch-site") === "cross-site" || origin && new URL(origin).host !== request.headers.get("host")) {
+    let crossOrigin = request.headers.get("sec-fetch-site") === "cross-site";
+    if (origin) {
+      try {crossOrigin ||= new URL(origin).host !== request.headers.get("host");} catch {crossOrigin = true;}
+    }
+    if (crossOrigin) {
       return NextResponse.json({detail: "Cross-origin changes are not allowed."}, {status: 403});
     }
   }

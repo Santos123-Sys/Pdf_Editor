@@ -175,3 +175,11 @@ def test_deletion_failure_retries_without_restoring_access(client, monkeypatch):
     monkeypatch.setattr(main,'remove_bytes',remove)
     client.post('/maintenance/expire')
     assert not (main.STORE / doc_id).exists()
+
+
+def test_expiry_sweep_rechecks_deadline_after_locking(client):
+    doc_id, _ = upload(client)
+    with main.db() as conn:
+        conn.execute("UPDATE documents SET expires_at=now()+interval '1 day' WHERE id=%s", (doc_id,))
+    assert main.delete_document(doc_id, only_expired=True) == {'deleted': False}
+    assert client.get(f'/documents/{doc_id}/files/0').status_code == 200

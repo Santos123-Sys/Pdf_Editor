@@ -43,6 +43,14 @@ jobs:
       - name: Browser happy path and recovery
         working-directory: web
         run: npx playwright test
+      - name: Consistent backup and isolated restoration drill
+        run: |
+          sh scripts/backup.sh /tmp/papertrail-backup
+          docker compose exec -T db createdb -U pdf pdf_restore
+          docker compose exec -T db psql -v ON_ERROR_STOP=1 -U pdf -d pdf_restore < /tmp/papertrail-backup/database.sql
+          docker volume create papertrail-restore-ci
+          docker compose run --rm --no-deps -v papertrail-restore-ci:/data -v /tmp/papertrail-backup:/backup:ro api python -c 'import tarfile; a=tarfile.open("/backup/files.tar.gz"); a.extractall("/data",filter="data")'
+          docker compose run --rm --no-deps -e DATABASE_URL=postgresql://pdf:change-me-for-local-use@db:5432/pdf_restore -v papertrail-restore-ci:/data api python tests/verify_restored.py
       - name: Diagnostic logs
         if: failure()
         run: docker compose logs --no-color --tail=150
@@ -54,4 +62,6 @@ jobs:
           if-no-files-found: ignore
       - name: Stop test stack
         if: always()
-        run: docker compose down -v
+        run: |
+          docker compose down -v
+          docker volume rm papertrail-restore-ci || true

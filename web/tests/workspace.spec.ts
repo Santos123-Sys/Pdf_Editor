@@ -18,7 +18,7 @@ test("upload, preview every page, rotate, download, and signer consent",async({p
   await page.getByLabel("Signer name",{exact:true}).fill("Jane Doe");
   await page.getByRole("button",{name:"Create invitation link"}).click();
   const url=await page.getByLabel("Invitation link",{exact:true}).inputValue();
-  const signerContext=await browser.newContext(); // No workspace credentials for an invited signer.
+  const signerContext=await browser.newContext({httpCredentials:{username:"signer",password:"not-the-workspace-password"}}); // No valid owner credentials; override inherited test defaults.
   const signer=await signerContext.newPage();
   await signer.goto(url);
   await expect(signer.getByText("You were invited as")).toBeVisible();
@@ -28,10 +28,10 @@ test("upload, preview every page, rotate, download, and signer consent",async({p
   const original=await signerContext.request.get(url.replace("/sign/","/api/invitations/")+"/file");
   expect(original.status()).toBe(200);
   if(process.env.TEST_WORKSPACE_PASSWORD){
-    const blocked=await signerContext.request.get(new URL("/api/documents",url).toString());
-    expect(blocked.status()).toBe(401);
-    const bypass=await signerContext.request.get(new URL("/api/documents",url).toString(),{headers:{"x-middleware-subrequest":"middleware:middleware:middleware:middleware:middleware"}});
-    expect(bypass.status()).toBe(401);
+    const blocked=await fetch(new URL("/api/documents",url));
+    expect(blocked.status).toBe(401);
+    const bypass=await fetch(new URL("/api/documents",url),{headers:{"x-middleware-subrequest":"middleware:middleware:middleware:middleware:middleware"}});
+    expect(bypass.status).toBe(401);
   }
   await signer.getByLabel("Your full name").fill("Jane Doe");
   await signer.getByRole("checkbox").check();
@@ -51,6 +51,6 @@ test("upload, preview every page, rotate, download, and signer consent",async({p
 test("unavailable API has a recoverable error",async({page})=>{
   await page.route("**/api/documents",route=>route.fulfill({status:503,contentType:"application/json",body:JSON.stringify({detail:"Document service is unavailable. Please retry shortly."})}));
   await page.goto("/");
-  await expect(page.getByRole("alert")).toContainText("unavailable");
+  await expect(page.getByRole("alert").filter({hasText:"Document service is unavailable"})).toBeVisible();
   await expect(page.getByRole("button",{name:"Refresh workspace"})).toBeVisible();
 });

@@ -80,6 +80,12 @@ async def database_unavailable(request, exc):
     return JSONResponse(status_code=503, content={'detail': 'Document database is unavailable. Retry shortly; do not re-upload until you check the library.'})
 
 
+@app.exception_handler(OSError)
+async def store_unavailable(request, exc):
+    logger.warning('Document store error: %s', type(exc).__name__)
+    return JSONResponse(status_code=503, content={'detail': 'The document store could not complete this request. Check disk space and permissions, then refresh the library before retrying.'})
+
+
 def event(conn, document_id, kind, digest, details=None):
     conn.execute('INSERT INTO events (id,document_id,kind,digest,details) VALUES (%s,%s,%s,%s,%s::jsonb)',
                  (str(uuid.uuid4()), str(document_id), kind, digest, json.dumps(details or {}, allow_nan=False)))
@@ -234,8 +240,8 @@ class Operation(BaseModel):
 @app.post('/documents/{document_id}/operations', status_code=201)
 def operate(document_id: uuid.UUID, request: Operation):
     doc_id = str(document_id)
-    published = None
     try:
+        json.dumps(request.options, allow_nan=False)
         with db() as conn:
             ids = sorted({doc_id, *[str(i) for i in request.merge_document_ids]})
             locked = {i: doc_row(conn, i, 'update') for i in ids}
@@ -340,8 +346,14 @@ def remove_bytes(document_id):
 
 @app.delete('/documents/{document_id}')
 def delete(document_id: uuid.UUID):
+    return delete_document(document_id)
+
+
+def delete_document(document_id, only_expired=False):
     with db() as conn:
         row = doc_row(conn, document_id, 'update', allow_expired=True)
+        if only_expired and (row[5] is None or row[5] > datetime.now(timezone.utc)):
+            return {'deleted': False}
         conn.execute('UPDATE documents SET deleted_at=now() WHERE id=%s', (str(document_id),))
         conn.execute('UPDATE invitations SET revoked_at=now() WHERE document_id=%s AND sealed_hash IS NULL', (str(document_id),))
         event(conn, document_id, 'deleted', row[3])
@@ -359,15 +371,18 @@ def expire_documents():
     with db() as conn:
         ids = [r[0] for r in conn.execute('SELECT id FROM documents WHERE expires_at<=now() AND deleted_at IS NULL').fetchall()]
         deleted_ids = [r[0] for r in conn.execute('SELECT id FROM documents WHERE deleted_at IS NOT NULL').fetchall()]
+    removed = 0
     for document_id in ids:
         try:
-            delete(document_id)
+            result = delete_document(document_id, only_expired=True)
+            if not isinstance(result, dict) or result.get('deleted'):
+                removed += 1
         except HTTPException as exc:
             if exc.status_code != 404:
                 raise
     for document_id in deleted_ids:
         remove_bytes(document_id)
-    return {'expired': len(ids)}
+    return {'expired': removed}
 
 
 @app.get('/export')
@@ -422,6 +437,8 @@ def invite(document_id: uuid.UUID, value: Invite):
     doc_id = str(document_id)
     with db() as conn:
         row = doc_row(conn, doc_id, 'update')
+        if value.version != next_version(conn, doc_id) - 1:
+            raise HTTPException(409, 'Create invitations from the latest PDF version so earlier edits and signatures are preserved.')
         path = source_path(conn, row, value.version)
         if path.suffix != '.pdf':
             raise HTTPException(422, 'Invite a signer to the converted PDF version.')
