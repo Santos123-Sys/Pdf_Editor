@@ -15,3 +15,7 @@ next-env.d.ts
 playwright-report/
 test-results/
 web/tests/fixtures/
+
+/backups/
+/papertrail.sql
+/papertrail-files.tar.gz

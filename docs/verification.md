@@ -10,7 +10,19 @@ Scope: local personal PDF workspace, 2026-10-21.
 - `python3 -m compileall -q api/app`: passed.
 - `git diff --check`: passed.
 
-## Complete stack gate
+## Complete stack gate — passed
+
+[Verified CI run](https://github.com/Santos123-Sys/Pdf_Editor/actions/runs/39622480055), implementation commit `139274d80ad216e5348ae26157f7677480d9e777`:
+
+- Documented Compose build/start: passed; all services healthy.
+- Real PDF + PostgreSQL regressions: **20 passed**.
+- Full API path through the web proxy: passed, including actual LibreOffice conversion, consent, seal, export, expiry and deletion.
+- Playwright: **2 passed**, including signer review without valid owner credentials, owner-route denial, middleware bypass attempt, mobile overflow check and recoverable API failure.
+- Consistent backup and isolated PostgreSQL/volume restoration: passed; **6 file hashes and 19 audit events verified**.
+- [Browser screenshots](https://github.com/Santos123-Sys/Pdf_Editor/actions/runs/39622480055/artifacts/12354997828) are retained as CI artifacts.
+
+These checks use generated fixtures, not personal documents. This certifies those journeys on the CI Linux environment; it does not certify every possible PDF/Office feature or the user's computer.
+
 
 [PR #1](https://github.com/Santos123-Sys/Pdf_Editor/pull/1) runs the Compose/PostgreSQL/LibreOffice/Playwright workflow. The CI result is the authoritative complete-stack gate; a local unit-test pass alone does not certify it. Workflow commands:
 
@@ -32,6 +44,6 @@ The workflow generates a two-page PDF fixture before Playwright, uses a disposab
 - Docker and PostgreSQL are absent in the local execution environment. The complete stack is therefore tested in GitHub CI.
 - The local Playwright browser download failed; browser verification is delegated to the CI runner, with screenshots/traces retained.
 - No Railway service for this repository existed in the connected account. Local storage remains the default; no remote store was created.
-- No backup restoration drill has been executed yet. The documented backup script quiesces writers; restore is documented for a fresh database and volume.
+- A complete backup restoration drill passed in CI against a separate database and file volume. Periodic recovery checks on the actual installation are still the owner’s responsibility.
 - Arbitrary PDFs, XFA forms, unusual fonts, signed/encrypted inputs, and Office layout fidelity are not comprehensively certified. Warnings remain visible. Redaction does not certify that all sensitive data is absent from the document.
 - Filesystem publication and SQL commit are not a single atomic transaction. Orphans fail closed and require deliberate reconciliation; existing bytes are never overwritten.
