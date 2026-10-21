@@ -8,3 +8,10 @@ __pycache__/
 .venv/
 data/
 *.pyc
+
+
+*.tsbuildinfo
+next-env.d.ts
+playwright-report/
+test-results/
+web/tests/fixtures/

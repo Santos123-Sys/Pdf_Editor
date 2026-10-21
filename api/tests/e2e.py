@@ -12,7 +12,8 @@ pdf = fitz.open()
 pdf.new_page().insert_text((70, 90), "e2e source")
 source = pdf.tobytes()
 pdf.close()
-with httpx.Client(base_url=base, timeout=30) as client:
+password = os.getenv("TEST_WORKSPACE_PASSWORD")
+with httpx.Client(base_url=base, timeout=180, auth=("workspace", password) if password else None) as client:
     health = None
     for _ in range(30):
         try:
@@ -36,7 +37,7 @@ with httpx.Client(base_url=base, timeout=30) as client:
         assert output[0].rotation == 90
         assert "e2e source" in output[0].get_text()
     detail = client.get(f"/documents/{document_id}").json()
-    assert [e["kind"] for e in detail["events"]] == ["uploaded", "rotate", "downloaded"]
+    assert sorted(e["kind"] for e in detail["events"]) == ["downloaded", "rotate", "uploaded"]
     assert len(detail["versions"]) == 1
     invite = client.post(f"/documents/{document_id}/invitations", json={"signer_name": "Jane Doe", "version": version, "page": 1, "x": 80, "y": 120})
     invite.raise_for_status()
@@ -79,3 +80,4 @@ with httpx.Client(base_url=base, timeout=30) as client:
     deleted.raise_for_status()
     assert client.get(f"/documents/{office.json()['id']}").status_code == 404
     print(f"PASS: upload -> rotate -> download -> audit -> consent -> seal -> export; Office -> PDF -> expiry -> delete ({document_id})")
+

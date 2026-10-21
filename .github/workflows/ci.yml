@@ -1,0 +1,57 @@
+name: Local workspace verification
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: pdf-editor-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      WORKSPACE_PASSWORD: ci-workspace-test-only
+      TEST_WORKSPACE_PASSWORD: ci-workspace-test-only
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Build and start the documented local stack
+        run: docker compose up --build -d --wait --wait-timeout 300
+      - name: Isolated integration database
+        run: docker compose exec -T db createdb -U pdf pdf_test
+      - name: PDF transformations and PostgreSQL regressions
+        run: docker compose run --rm -e DATABASE_URL=postgresql://pdf:change-me-for-local-use@db:5432/pdf_test -e STORE_DIR=/tmp/test-store api python -m pytest -q tests
+      - name: Full API happy path through the web proxy
+        run: docker compose exec -T -e TEST_API_URL=http://web:3000/api -e TEST_WORKSPACE_PASSWORD="$TEST_WORKSPACE_PASSWORD" api python tests/e2e.py
+      - name: Browser test dependencies
+        working-directory: web
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+      - name: Generate browser PDF fixture
+        run: |
+          mkdir -p web/tests/fixtures
+          docker compose exec -T api python -c 'import fitz,sys; d=fitz.open(); d.new_page().insert_text((70,90),"Browser page one"); d.new_page().insert_text((70,90),"Browser page two"); sys.stdout.buffer.write(d.tobytes())' > web/tests/fixtures/two-pages.pdf
+      - name: Browser happy path and recovery
+        working-directory: web
+        run: npx playwright test
+      - name: Diagnostic logs
+        if: failure()
+        run: docker compose logs --no-color --tail=150
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-evidence
+          path: web/test-results
+          if-no-files-found: ignore
+      - name: Stop test stack
+        if: always()
+        run: docker compose down -v

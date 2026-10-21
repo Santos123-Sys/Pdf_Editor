@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+import math
 import subprocess
 import tempfile
 from pathlib import Path
@@ -20,9 +21,18 @@ class PdfError(ValueError):
 def inspect_pdf(source: Path) -> dict:
     try:
         with Pdf.open(source) as pdf:
+            if pdf.is_encrypted:
+                raise PdfError("This PDF is encrypted. Unlock it before editing.")
+            if not 1 <= len(pdf.pages) <= 1000:
+                raise PdfError("PDFs must contain between 1 and 1,000 pages.")
             root = pdf.Root
+            with fitz.open(source) as rendered:
+                dimensions = [{"width": p.rect.width, "height": p.rect.height} for p in rendered]
+            if any(not 0 < d[axis] <= 14400 for d in dimensions for axis in ("width", "height")):
+                raise PdfError("PDF page dimensions exceed the supported limit.")
             return {
                 "pages": len(pdf.pages),
+                "dimensions": dimensions,
                 "encrypted": bool(pdf.is_encrypted),
                 "forms": "/AcroForm" in root,
                 "signatures": "/AcroForm" in root and "/SigFlags" in root.AcroForm,
@@ -40,12 +50,23 @@ def inspect_pdf(source: Path) -> dict:
 def transform(sources: list[Path], destination: Path, operation: str, options: dict) -> dict:
     if not sources:
         raise PdfError("Select at least one PDF.")
+    if destination.exists() or any(destination.resolve() == source.resolve() for source in sources):
+        raise PdfError("Choose a new output path; existing files cannot be overwritten.")
+    for source in sources:
+        if source.suffix.lower() != ".pdf":
+            raise PdfError("Select the converted PDF version of this Office document.")
+        inspect_pdf(source)
+    if len(sources) > 1 and operation != "merge":
+        raise PdfError("Only merge accepts multiple inputs.")
     if operation == "ocr":
         with tempfile.TemporaryDirectory() as temp:
             doc = fitz.open(sources[0])
             result = fitz.open()
+            if len(doc) > 200:
+                raise PdfError("OCR supports up to 200 pages per operation. Split the PDF first.")
             for index, page in enumerate(doc):
-                pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
+                scale = min(2, 4000 / max(page.rect.width, page.rect.height))
+                pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale))
                 image_path = Path(temp) / f"page-{index}.png"
                 pdf_path = Path(temp) / f"page-{index}"
                 image_path.write_bytes(pix.tobytes("png"))
@@ -64,8 +85,9 @@ def transform(sources: list[Path], destination: Path, operation: str, options: d
         if not 0 <= page_number < len(doc):
             raise PdfError("Page number is out of range.")
         page = doc[page_number]
+        page.remove_rotation()
         rect = fitz.Rect(*[float(options.get(k, 0)) for k in ("x0", "y0", "x1", "y1")])
-        if rect.is_empty or rect.is_infinite or not page.rect.contains(rect):
+        if not all(math.isfinite(v) for v in rect) or rect.is_empty or rect.is_infinite or not page.rect.contains(rect):
             raise PdfError("Choose a rectangle within the page.")
         if operation == "redact":
             page.add_redact_annot(rect, fill=(0, 0, 0))
@@ -81,11 +103,13 @@ def transform(sources: list[Path], destination: Path, operation: str, options: d
         doc.close()
     else:
         try:
-            with Pdf.new() as output:
+            with (Pdf.open(sources[0]) if operation in {"rotate", "compress", "watermark"} else Pdf.new()) as output:
                 if operation == "merge":
+                    if sum(inspect_pdf(source)["pages"] for source in sources) > 1000:
+                        raise PdfError("Merged PDFs cannot exceed 1,000 pages.")
                     for source in sources:
                         with Pdf.open(source) as pdf:
-                            output.pages.extend(pdf.pages)
+                            output.add_pages_from(pdf)
                 else:
                     with Pdf.open(sources[0]) as pdf:
                         count = len(pdf.pages)
@@ -101,7 +125,8 @@ def transform(sources: list[Path], destination: Path, operation: str, options: d
                             pages = [int(v.strip()) - 1 for v in raw.split(",") if v.strip()]
                             if sorted(pages) != list(range(count)):
                                 raise PdfError("Order must list each page exactly once.")
-                        output.pages.extend(pdf.pages[i] for i in pages)
+                        if operation not in {"rotate", "compress", "watermark"}:
+                            output.add_pages_from(pdf, pages=pages)
                         if operation == "rotate":
                             degrees = int(options.get("degrees", 90))
                             if degrees not in {90, 180, 270}:
@@ -136,10 +161,12 @@ def transform(sources: list[Path], destination: Path, operation: str, options: d
 
 
 def office_to_pdf(source: Path, destination: Path) -> dict:
+    if destination.exists() or destination.resolve() == source.resolve():
+        raise PdfError("Choose a new output path; existing files cannot be overwritten.")
     with tempfile.TemporaryDirectory() as temp:
         try:
             subprocess.run([
-                "libreoffice", "-env:UserInstallation=file:///tmp/lo-pdf-editor",
+                "libreoffice", f"-env:UserInstallation={Path(temp).as_uri()}/profile",
                 "--headless", "--convert-to", "pdf", "--outdir", temp, str(source)
             ], check=True, timeout=120, capture_output=True)
         except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
@@ -149,3 +176,4 @@ def office_to_pdf(source: Path, destination: Path) -> dict:
             raise PdfError("Office conversion did not produce a PDF.")
         destination.write_bytes(made.read_bytes())
     return inspect_pdf(destination)
+
