@@ -23,6 +23,10 @@ jobs:
           node-version: '22'
           cache: npm
           cache-dependency-path: web/package-lock.json
+      - name: Build Railway deployment images
+        run: |
+          docker build -f api/Dockerfile.railway -t papertrail-api-railway api
+          docker build -f web/Dockerfile.railway -t papertrail-web-railway web
       - name: Build and start the documented local stack
         run: docker compose up --build -d --wait --wait-timeout 300
       - name: Isolated integration database

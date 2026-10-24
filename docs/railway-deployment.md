@@ -4,7 +4,11 @@ The owner authorized hosting on Railway on 2026-10-21. Documents uploaded to tha
 
 ## Current deployment receipt
 
-Deployment is **blocked, not completed**. Railway rejected project creation with `Deploys have been paused temporarily`. A subsequent project inventory confirmed that no partial Papertrail PDF project existed. The [Railway status page](https://status.railway.com/) reported paused builds across all regions and partial API unavailability. No hosted URL or new credential exists yet.
+Provisioning resumed on 2026-10-24. Project `d2558fef-083f-47b9-b2a8-7a02de2f3c11`, production environment `875ce382-40fa-43e4-af77-2e989dda695b`, now contains PostgreSQL, API with a 5 GB /data volume, and web. Public URL: https://web-production-af9ec.up.railway.app . Deployment acceptance checks are still pending; provisioning alone does not establish a working application.
+
+Railway's builder rejects optional BuildKit secret mounts in the local Dockerfiles. Both services must use `Dockerfile.railway` under their respective root directories. These variants install the same dependencies using normal TLS verification; local Dockerfiles retain optional certificate support. CI builds both Railway images in addition to exercising the local stack.
+
+The workspace password is generated cryptographically and stored only in Railway variables. Retrieve `WORKSPACE_PASSWORD` from web → Variables; the login username is `workspace`. API and Postgres have no public domain or TCP proxy. The document volume is in EU West; the PostgreSQL template initially placed its volume in US East. Region alignment remains an operational follow-up.
 
 ## Concrete configuration
 
@@ -13,12 +17,12 @@ Deployment is **blocked, not completed**. Railway rejected project creation with
 | Service | Source | Health check | Exposure | Persistent data |
 | --- | --- | --- | --- | --- |
 | Postgres | Railway PostgreSQL template | Database startup | Private only | `/var/lib/postgresql/data` |
-| api | This repository, `/api`, Dockerfile | `/health` | Private only | 5 GB volume at `/data`; one replica |
-| web | This repository, `/web`, Dockerfile | `/healthz` | Public HTTPS with shared password | Document bytes remain in the API volume |
+| api | This repository, `/api`, Dockerfile.railway | `/health` | Private only | 5 GB volume at `/data`; one replica |
+| web | This repository, `/web`, Dockerfile.railway | `/healthz` | Public HTTPS with shared password | Document bytes remain in the API volume |
 
 The public readiness route returns only `{ "ok": true/false }`. It checks the upstream API, PostgreSQL/store readiness, and the presence of the required remote workspace password. It does not expose document metadata or unlock protected owner routes.
 
-## Execution order after Railway resumes provisioning
+## Deployment and verification procedure
 
 1. Inventory projects again before retrying creation, to avoid duplicates. Create `Papertrail PDF` in the specified workspace, with the `production` environment.
 2. Describe and deploy Railway's PostgreSQL template. Use its generated database credentials. Inspect the result and remove any template-created public database domain or TCP proxy, since this installation uses private networking.

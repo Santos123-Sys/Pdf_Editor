@@ -15,7 +15,7 @@
     },
     "api": {
       "rootDirectory": "/api",
-      "dockerfilePath": "Dockerfile",
+      "dockerfilePath": "Dockerfile.railway",
       "healthcheckPath": "/health",
       "healthcheckTimeout": 300,
       "privateOnly": true,
@@ -34,7 +34,7 @@
     },
     "web": {
       "rootDirectory": "/web",
-      "dockerfilePath": "Dockerfile",
+      "dockerfilePath": "Dockerfile.railway",
       "healthcheckPath": "/healthz",
       "healthcheckTimeout": 300,
       "publicDomain": true,
